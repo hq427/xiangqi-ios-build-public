@@ -3,6 +3,13 @@ name: Build unsigned iOS IPA
 # 分发方式：自己用，不上架。
 # 云端 macOS runner 只负责产出「未签名 IPA」，签名在用户自己的 Windows 上
 # 用 Sideloadly / AltStore + 免费 Apple ID 完成，因此仓库里不需要任何证书或密钥。
+# 排队策略说明：
+#   * macos-14 已于 2026-11-02 退役，指定它会零日志 cancelled。
+#   * macos-15 / macos-latest 是 arm64(M1) 池，容量紧张；GitHub 调度器有
+#     15 分钟分配超时，排队超时会把 run 判成 failure / job cancelled
+#     （annotation: "not acquired by Runner of type hosted"）。
+#   * macos-15-intel 是 x64 Intel 池（4 核 14GB，公开仓库免费无限），
+#     避开 arm64 容量瓶颈。xcodebuild 构建 iOS arm64 二进制与宿主机架构无关。
 on:
   workflow_dispatch:
   push:
@@ -10,11 +17,14 @@ on:
       - 'ios/**'
       - '.github/workflows/ios-unsigned-ipa.yml'
 
+# 每次 API 上传都会产生新 commit；只保留最新一次构建，避免排队 run 堆积
+concurrency:
+  group: unsigned-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    # macOS 14 镜像已于 2026-11-02 全部退役（actions/runner-images 公告），
-    # 继续用 macos-14 会导致 job 永远分配不到 runner、零日志被 cancelled。
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 25
     permissions:
       contents: read
@@ -24,7 +34,9 @@ jobs:
       - name: Show toolchain
         run: |
           sw_vers
+          uname -m
           xcodebuild -version
+          xcodebuild -showsdks | head -20
           xcodegen --version || true
 
       - name: Install XcodeGen
