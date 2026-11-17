@@ -1,0 +1,15 @@
+# 云构建仓库只跟踪 .github/ 与 ios/；其余都是本机资产，不上传。
+/engine/
+/openbook/
+/server/
+/.workbuddy/
+/tools/
+/dist/
+*.zip
+*.rar
+*.exe
+*.nnue
+*.enc
+*.log
+*.pyc
+__pycache__/

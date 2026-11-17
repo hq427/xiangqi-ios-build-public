@@ -1,0 +1,61 @@
+name: XiangqiOverlay
+options:
+  bundleIdPrefix: com.home.xiangqi
+  deploymentTarget:
+    iOS: "16.0"
+  groupSortPosition: top
+
+# xcodebuild -scheme 需要显式 scheme；XcodeGen 默认不生成。
+schemes:
+  XiangqiOverlay:
+    build:
+      targets:
+        XiangqiOverlay: all
+    run:
+      config: Release
+    archive:
+      config: Release
+
+targets:
+  XiangqiOverlay:
+    type: application
+    platform: iOS
+    sources:
+      - path: XiangqiOverlay
+        excludes:
+          - "**/Info.plist"
+    info:
+      path: XiangqiOverlay/Info.plist
+      properties:
+        CFBundleDisplayName: 象棋浮窗
+        CFBundleName: XiangqiOverlay
+        # 写成字面值，避免未签名构建时 plist 变量未被展开导致 Sideloadly 重签失败
+        CFBundleIdentifier: com.home.xiangqi.overlay
+        CFBundleExecutable: XiangqiOverlay
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSRequiresIPhoneOS: true
+        UIRequiredDeviceCapabilities: [arm64]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # 后台音频：后续自定义 PiP 浮窗保活用；此项只是 Info.plist 键，
+        # 不需要 entitlement，免费 Apple ID 可签。
+        UIBackgroundModes: [audio]
+        NSLocalNetworkUsageDescription: 连接同一热点下的电脑，读取棋局提示
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.home.xiangqi.overlay
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+
+# 阶段 2a：只做「连电脑 + 显示提示」的可编译壳，零 App Extension、
+# 零 entitlement，确保免费 Apple ID 自签能过。
+# 阶段 2b 才加入 Broadcast Upload Extension（屏幕采集）——那一步需要
+# 付费开发者账号，或先实测 Sideloadly 能否签含 extension 的 IPA。

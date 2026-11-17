@@ -1,0 +1,92 @@
+name: Build unsigned iOS IPA
+
+# 分发方式：自己用，不上架。
+# 云端 macOS runner 只负责产出「未签名 IPA」，签名在用户自己的 Windows 上
+# 用 Sideloadly / AltStore + 免费 Apple ID 完成，因此仓库里不需要任何证书或密钥。
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
+
+jobs:
+  build:
+    # macOS 14 镜像已于 2026-11-02 全部退役（actions/runner-images 公告），
+    # 继续用 macos-14 会导致 job 永远分配不到 runner、零日志被 cancelled。
+    runs-on: macos-15
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodegen --version || true
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
+          xcodegen --version
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build unsigned Release app
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project XiangqiOverlay.xcodeproj \
+            -scheme XiangqiOverlay \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            -derivedDataPath build/DerivedData \
+            clean build
+
+      - name: Pack unsigned IPA
+        run: |
+          APP="ios/build/DerivedData/Build/Products/Release-iphoneos/XiangqiOverlay.app"
+          test -d "$APP" || { echo "app not found"; find ios/build -maxdepth 6 -name '*.app'; exit 1; }
+          rm -rf Payload XiangqiOverlay-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -q -r -y XiangqiOverlay-unsigned.ipa Payload
+          echo "IPA contents:"
+          unzip -l XiangqiOverlay-unsigned.ipa | head -20
+
+      - name: Verify no signature / no extension (free-Apple-ID friendly)
+        run: |
+          # 免费 Apple ID 签不了 App Group 等 entitlement，且每个 extension
+          # 会额外消耗 7 天内 10 个 App ID 的额度。本阶段先保证「零 extension」。
+          if [ -d "Payload/XiangqiOverlay.app/PlugIns" ]; then
+            echo "::warning::检测到 App Extension，Sideloadly/AltStore 免费签名可能失败"
+          else
+            echo "确认零 App Extension"
+          fi
+          if [ -d "Payload/XiangqiOverlay.app/_CodeSignature" ]; then
+            echo "::warning::检测到签名目录"
+          else
+            echo "确认未签名"
+          fi
+          BID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+                "Payload/XiangqiOverlay.app/Info.plist" 2>/dev/null || true)
+          echo "CFBundleIdentifier = ${BID:-<未读到>}"
+          case "$BID" in
+            *'$('*) echo "::error::Bundle ID 变量未展开，Sideloadly 重签会失败"; exit 1 ;;
+            com.home.xiangqi.overlay) echo "Bundle ID 正确" ;;
+            *) echo "::warning::Bundle ID 非预期值，请复查" ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XiangqiOverlay-unsigned
+          path: XiangqiOverlay-unsigned.ipa
+          retention-days: 30
